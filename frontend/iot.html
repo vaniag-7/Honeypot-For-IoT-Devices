@@ -1,0 +1,127 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>IoT Device Simulator (Honeypot Demo)</title>
+  <style>
+    body { background:#0b0f14; color:#dff7ff; font-family: Arial, sans-serif; display:flex; align-items:center; justify-content:center; height:100vh; }
+    .card{ background:#0f1b26; padding:20px; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,0.6); width:380px;}
+    h2{ color:#6fe7ff; margin:0 0 12px 0; font-family: "Consolas", monospace;}
+    label{ display:block; margin:8px 0 6px 0; font-size:14px; color:#cfeffd; }
+    select, input[type="text"]{ width:100%; padding:8px; border-radius:6px; border:1px solid #23343f; background:#071017; color:#dff7ff; }
+    .row{ display:flex; gap:8px; margin-top:10px; }
+    button{ flex:1; padding:10px; border:none; border-radius:8px; font-weight:bold; cursor:pointer; }
+    button.normal{ background:#1fb07f; color:#001; }
+    button.mal{ background:#ff6b6b; color:#fff; }
+    button.burst{ background:#0fb0ff; color:#001; }
+    #status{ margin-top:12px; color:#bfe7ff; font-size:13px; min-height:20px; }
+    .small{ font-size:12px; color:#9fd8e8; margin-top:6px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>IoT Device Simulator</h2>
+
+    <label>Honeypot Server URL</label>
+    <input id="serverUrl" value="http://127.0.0.1:8080/iot" />
+
+    <label>Device</label>
+    <select id="device">
+      <option>Smart Light</option>
+      <option>Security Camera</option>
+      <option>Thermostat</option>
+      <option>Door Lock</option>
+      <option>Weather Sensor</option>
+    </select>
+
+    <label>Malicious payload type</label>
+    <select id="malType">
+      <option value="scan">Port scan</option>
+      <option value="attack">Bruteforce login</option>
+      <option value="exploit">Exploit attempt</option>
+      <option value="unauthorized">Unauthorized access</option>
+      <option value="payload">Weird payload</option>
+    </select>
+
+    <div class="row" style="margin-top:12px;">
+      <button class="normal" id="sendNormal">Send Normal</button>
+      <button class="mal" id="sendMal">Send Malicious</button>
+    </div>
+
+    <div class="row" style="margin-top:10px;">
+      <button class="burst" id="burstNormal">Burst (Normal x5)</button>
+      <button class="burst" id="burstMal">Burst (Mal x10)</button>
+    </div>
+
+    <div id="status">Ready</div>
+    <div class="small">
+      Tips: use <b>Send Malicious</b> to trigger "suspicious" detection (keywords). Use <b>Burst</b> to trigger frequency-based alerts.
+    </div>
+  </div>
+
+  <script>
+    const serverInput = document.getElementById('serverUrl');
+    const deviceSel = document.getElementById('device');
+    const malType = document.getElementById('malType');
+    const status = document.getElementById('status');
+
+    async function send(device, queryString) {
+      const base = serverInput.value.trim();
+      if (!base) { status.innerText = 'Set server URL first'; return {ok:false,err:'no url'}; }
+      // use GET with query params so our HoneypotServer logs Query=...
+      const url = new URL(base);
+      url.searchParams.set('device', device);
+      if (queryString) {
+        // append an "action" or "note" param containing suspicious keywords
+        url.searchParams.set('action', queryString);
+      }
+      try {
+        const resp = await fetch(url.toString(), { method: 'GET', mode: 'cors' });
+        const text = await resp.text();
+        return { ok: true, resp: text };
+      } catch (err) {
+        return { ok:false, err: err.toString() };
+      }
+    }
+
+    document.getElementById('sendNormal').onclick = async () => {
+      status.innerText = 'Sending normal...';
+      const d = deviceSel.value;
+      const res = await send(d, 'heartbeat');
+      status.innerText = res.ok ? `Sent normal (${d})` : `Failed: ${res.err}`;
+    };
+
+    document.getElementById('sendMal').onclick = async () => {
+      status.innerText = 'Sending malicious...';
+      const d = deviceSel.value;
+      const type = malType.value;
+      const payload = type + '_probe'; // includes keyword like scan/attack/exploit
+      const res = await send(d, payload);
+      status.innerText = res.ok ? `Sent malicious (${d})` : `Failed: ${res.err}`;
+    };
+
+    document.getElementById('burstNormal').onclick = async () => {
+      status.innerText = 'Bursting normal (5)...';
+      const d = deviceSel.value;
+      for (let i=0;i<5;i++){
+        await send(d, 'heartbeat'+i);
+        await new Promise(r=>setTimeout(r, 150)); // slight gap
+      }
+      status.innerText = 'Burst normal done';
+    };
+
+    document.getElementById('burstMal').onclick = async () => {
+      status.innerText = 'Bursting malicious (10)...';
+      const d = deviceSel.value;
+      const type = malType.value;
+      for (let i=0;i<10;i++){
+        // alternate between keyword-heavy and short probes
+        const payload = (i%2===0) ? (type + '_probe_' + i) : (type + '_attack_' + i);
+        send(d, payload); // don't await all to simulate rapid requests
+        await new Promise(r=>setTimeout(r, 120));
+      }
+      status.innerText = 'Burst malicious done';
+    };
+  </script>
+</body>
+</html>
